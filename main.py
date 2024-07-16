@@ -1,12 +1,13 @@
 import tkinter as tk
+import logging
+import time
 from tkinter import ttk, simpledialog, messagebox
 from selenium import webdriver
+from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.by import By
-import logging
-import time
-from selenium.webdriver.common.action_chains import ActionChains
+from selenium.common.exceptions import NoSuchElementException, TimeoutException, NoSuchWindowException
 
 # 配置日志记录
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -140,24 +141,27 @@ def open_alibaba(selected_categories, profile_path):
         logging.error(f"无法启动Firefox: {e}")
         messagebox.showerror("错误", f"无法启动Firefox: {e}")
         return
-    for category in selected_categories:
-        process_link(browser, "https://www.alibaba.com/", category)
-    # browser.quit()  # 处理完所有产品后关闭浏览器
 
-def process_link(browser, link, category):
+    success_count = 0  # 初始化成功计数器
+
+    for category in selected_categories:
+        try:
+            success_count = process_link(browser, "https://www.alibaba.com/", category, success_count)
+        except Exception as e:
+            logging.error(f"处理分类 {category} 时发生错误: {e}")
+            # 如果出现错误，关闭浏览器，重新打开并处理
+            browser.quit()
+            browser = webdriver.Firefox(options=options)
+            success_count = process_link(browser, "https://www.alibaba.com/", category, success_count)
+
+    browser.quit()  # 处理完所有产品后关闭浏览器
+
+def process_link(browser, link, category, success_count):
     logging.info(f"处理分类: {category}")
     try:
         logging.info(f"处理链接: {link}")
         browser.get(link)
-
-        # 切换到已有窗口 https://www.alibaba.com/
-        for handle in browser.window_handles:
-            browser.switch_to.window(handle)
-            if "https://www.alibaba.com/" in browser.current_url:
-                break
-        else:
-            # 如果没有找到 https://www.alibaba.com/ 页面，则重新打开
-            browser.execute_script("window.open('https://www.alibaba.com/')")
+        browser.switch_to.window(browser.window_handles[0])
 
         # 等待搜索框加载完成
         search_input = WebDriverWait(browser, 10).until(
@@ -192,9 +196,7 @@ def process_link(browser, link, category):
         # 加载完所有产品后，获取产品列表的长度并打印
         product_list = browser.find_elements(By.CLASS_NAME, "fy23-search-card")
         num_products = len(product_list)
-        print(f"共抓取到的产品数量：{num_products}")
-
-        success_count = 0  # 初始化成功次数计数器
+        logging.info(f"共抓取到的产品数量：{num_products}")
 
         # 循环处理产品
         for product in product_list:
@@ -209,24 +211,48 @@ def process_link(browser, link, category):
             product_link = product.find_element(By.TAG_NAME, "a").get_attribute("href")
             browser.execute_script(f"window.open('{product_link}')")
             # 处理产品详情页操作
-            handle_product_detail(browser, category)
+            success_count = handle_product_detail(browser, category, success_count)
             # 等待一段时间，可以根据实际情况调整
-            time.sleep(2)
-            success_count += 1
-            # 输出成功次数
-            print(f"成功处理的产品数量：{success_count}")
+            time.sleep(1)
+
+        logging.info(f"成功处理的产品数量: {success_count}")
+        return success_count
+
     except Exception as e:
-        logging.error(f"发生错误: {e}")
+        logging.error(f"处理链接时发生错误: {e}")
+        return success_count
 
-
-def handle_product_detail(browser, category):
+def handle_popup(browser):
     try:
-        # 获取当前窗口句柄（产品搜索页）
-        original_window = browser.current_window_handle
+        # 等待弹窗出现
+        WebDriverWait(browser, 10).until(
+            EC.presence_of_element_located((By.XPATH, "//div[contains(text(), 'This product is already in your store, what would you like to do?')]"))
+        )
 
-        # 获取新打开的产品详情页窗口句柄
+        # 检查是否出现弹窗
+        popup_message = browser.find_element(By.XPATH, "//div[contains(text(), 'This product is already in your store, what would you like to do?')]")
+
+        if popup_message:
+            logging.info("检测到产品已存在的弹窗")
+
+            # 直接关闭当前产品详情页
+            browser.close()
+            logging.info("关闭了产品已存在的弹窗")
+
+    except NoSuchElementException:
+        logging.info("未检测到产品已存在的弹窗")
+    except Exception as e:
+        logging.error(f"处理弹窗时发生错误: {e}")
+
+def handle_product_detail(browser, category, success_count):
+    try:
+        # 获取所有窗口句柄
+        original_window = browser.current_window_handle
+        handles = browser.window_handles
+
+        # 获取新打开的窗口句柄
         new_window = None
-        for window_handle in browser.window_handles:
+        for window_handle in handles:
             if window_handle != original_window:
                 new_window = window_handle
                 break
@@ -243,105 +269,155 @@ def handle_product_detail(browser, category):
 
             time.sleep(2)
 
+            # 处理弹窗
+            handle_popup(browser)
+
             # 获取产品标题
             product_title = browser.find_element(By.TAG_NAME, "h1").text
             logging.info(f"产品详情页标题: {product_title}")
 
-            # 这里可以添加更多产品详情页的操作，根据实际需求处理页面内容
-
-            add_btn_con = WebDriverWait(browser, 10).until(
-                EC.element_to_be_clickable((By.XPATH, '//*[@id="addBtnCon"]')))
-            add_btn_con.click()
-            logging.info("点击了按钮//*[@id='addBtnCon']")
-
-            try:
-                element = WebDriverWait(browser, 10).until(
-                    EC.presence_of_element_located((By.XPATH, '//span[@class="inactive" and text()="Draft"]'))
-                )
-                logging.info("成功加载 Draft 元素")
-                actions = ActionChains(browser)
-                actions.move_to_element(element).perform()
-                element.click()
-                logging.info("成功点击 Draft 元素")
-                time.sleep(2)
-            except Exception as e:
-                logging.error(f"等待和点击 Draft 元素时出现错误：{e}")
-
-            time.sleep(3)  # 可以根据实际情况调整等待时间
-
-            try:
-                variants_button = browser.find_element(By.XPATH,
-                                                       '//button[@data-actab-id="2" and @data-actab-group="0"]')
-                variants_button.click()
-                logging.info("点击了 Variants 按钮")
-                time.sleep(3)  # 等待页面加载
-
-                # 选择 Import all variants automatically 单选框
-                all_variants_radio = browser.find_element(By.ID, 'all_variants')
-                all_variants_radio.click()
-                logging.info("选择 Import all variants automatically 单选框")
-
-                time.sleep(3)  # 等待页面反应
-
-                # 选择 Select which variants to include 单选框
-                price_switch_radio = browser.find_element(By.ID, 'price_switch')
-                price_switch_radio.click()
-                logging.info("选择 Select which variants to include 单选框")
-
-                time.sleep(3)  # 等待页面反应
-            except Exception as e:
-                logging.error(f"点击 Variants 按钮时出现错误：{e}")
-
-            add_to_store_button = browser.find_element(By.ID, 'addBtnSec')
-            scroll_to_element(browser, add_to_store_button)
-
-            add_to_store_button.click()
-            logging.info("成功点击 Add to your Store 按钮")
-
-            logging.info("操作完成")
-
-            wait_for_element_to_appear(browser, By.ID, 'importify-app-container')
-            logging.info("页面加载完成")
-            time.sleep(20)
-
-            # 关闭当前产品详情页标签页
-            browser.close()
-
-            # 切换回原始窗口（产品搜索页）
-            browser.switch_to.window(original_window)
+            # 处理产品详情页操作，这里可以根据实际需要修改
+            success_count = handle_product_actions(browser, category, success_count)
 
             # 等待一段时间，可以根据实际情况调整
-            time.sleep(2)
+            time.sleep(1)
+            # 切换回原始窗口（产品搜索页）
+            browser.switch_to.window(original_window)
+        return success_count
+    except NoSuchWindowException as e:
+        logging.error(f"浏览器窗口丢失：{e}")
+        return success_count
     except Exception as e:
-        logging.error(f"发生错误: {e}")
+        logging.error(f"处理产品详情页时发生错误: {e}")
+        return success_count
 
-
-def select_checkbox_with_text(browser, category):
+def wait_for_element_to_appear(driver, by, selector, timeout=10):
     try:
-        labels = browser.find_elements(By.XPATH, "//label[contains(@style, '')]")
+        WebDriverWait(driver, timeout).until(
+            EC.presence_of_element_located((by, selector))
+        )
+    except TimeoutException:
+        logging.error(f"元素未能在 {timeout} 秒内出现: {selector}")
+        raise
 
-        selected = False
+def handle_product_actions(browser, category, success_count):
+    try:
+        add_btn_con = WebDriverWait(browser, 10).until(
+            EC.element_to_be_clickable((By.XPATH, '//*[@id="addBtnCon"]')))
+        add_btn_con.click()
+        logging.info("点击了按钮//*[@id='addBtnCon']")
 
-        for label in labels:
-            span = label.find_element(By.TAG_NAME, "span")
-            checkbox = label.find_element(By.XPATH, ".//input[@type='checkbox']")
+        try:
+            element = WebDriverWait(browser, 20).until(
+                EC.presence_of_element_located((By.XPATH, '//span[@class="inactive" and text()="Draft"]'))
+            )
+            logging.info("成功加载 Draft 元素")
+            actions = ActionChains(browser)
+            actions.move_to_element(element).perform()
+            element.click()
+            logging.info("成功点击 Draft 元素")
+            time.sleep(2)
+        except Exception as e:
+            logging.error(f"等待和点击 Draft 元素时出现错误：{e}")
 
-            if category in span.text:
-                if not checkbox.is_selected():
-                    checkbox.click()
-                    logging.info(f"选择复选框: {category}")
-                selected = True
-            else:
-                if checkbox.is_selected():
-                    checkbox.click()
-                    logging.info(f"取消复选框: {span.text}")
+        time.sleep(3)  # 可以根据实际情况调整等待时间
 
-        if not selected:
-            logging.warning(f"未找到匹配的类别: {category}")
+        # 检查是否出现 "This product is already in your store, what would you like to do?"
+        try:
+            existing_product_msg = browser.find_element(By.XPATH,
+                                                        '//div[contains(text(), "This product is already in your store, what would you like to do?")]')
+            logging.info("产品已存在，不再处理当前产品")
+            return success_count  # 跳出函数，不再处理当前产品
+        except NoSuchElementException:
+            pass  # 如果未找到消息元素，继续后续操作
 
+        time.sleep(3)  # 可以根据实际情况调整等待时间
+
+        try:
+            # 点击 description_tab_button 按钮
+            description_tab_button = browser.find_element(By.XPATH, '//*[@id="description_tab_button"]')
+            description_tab_button.click()
+            logging.info("点击了 description_tab_button 按钮")
+            time.sleep(3)  # 等待页面加载
+
+            # 点击 Variants 按钮
+            variants_button = browser.find_element(By.CSS_SELECTOR,
+                                                   'button.accordion-tab[data-actab-group="0"][data-actab-id="2"]')
+            variants_button.click()
+            logging.info("点击了 Variants 按钮")
+
+            # 选择 Import all variants automatically 单选框
+            all_variants_radio = browser.find_element(By.ID, 'all_variants')
+            all_variants_radio.click()
+            logging.info("选择 Import all variants automatically 单选框")
+
+            time.sleep(3)  # 等待页面反应
+
+            # 选择 Select which variants to include 单选框
+            price_switch_radio = browser.find_element(By.ID, 'price_switch')
+            price_switch_radio.click()
+            logging.info("选择 Select which variants to include 单选框")
+
+            time.sleep(3)  # 等待页面反应
+        except Exception as e:
+            logging.error(f"点击 Variants 按钮时出现错误：{e}")
+
+        # 点击 Images 按钮
+        images_button = browser.find_element(By.XPATH,
+                                             '//button[@class="accordion-tab accordion-custom-tab" and @data-actab-group="0" and @data-actab-id="3"]')
+        images_button.click()
+        logging.info("点击了 Images 按钮")
+        time.sleep(3)  # 等待页面反应
+
+        add_to_store_button = browser.find_element(By.ID, 'addBtnSec')
+        scroll_to_element(browser, add_to_store_button)
+
+        add_to_store_button.click()
+        logging.info("成功点击 Add to your Store 按钮")
+
+        logging.info("等待页面加载完成")
+
+        # 等待导入过程完成，确保 importify-app-container 元素出现
+        try:
+            wait_for_element_to_appear(browser, By.ID, 'importify-app-container')
+            logging.info("产品正在导入中...")
+
+            # 等待成功消息出现
+            success_message = None
+            timeout = 180  # 设定超时时间
+            start_time = time.time()
+            while time.time() - start_time < timeout:
+                try:
+                    success_message = browser.find_element(By.XPATH,
+                                                           '//div[@class="textcontainer centeralign home-content "]/p[1]')
+                    if success_message.text == "We have successfully created the product page.":
+                        logging.info(f"产品导入成功, 共计: {success_count + 1}")
+                        success_count += 1
+                        break
+                    else:
+                        logging.warning("产品正在导入中...")
+                except Exception as e:
+                    logging.warning("未检测到产品成功导入，继续等待...")
+                time.sleep(5)  # 每秒检查一次
+
+            if not success_message or success_message.text != "We have successfully created the product page.":
+                logging.error("超时：未找到成功创建产品页面的消息")
+
+        except Exception as e:
+            logging.error(f"页面加载出错: {e}")
+        time.sleep(2)
+        # 关闭当前产品详情页标签页
+        browser.close()
+        time.sleep(1)
+
+        return success_count
+
+    except NoSuchWindowException as e:
+        logging.error(f"浏览器窗口丢失：{e}")
+        return success_count
     except Exception as e:
-        logging.error(f"选择复选框时发生错误: {e}")
-
+        logging.error(f"处理产品详情页操作时发生错误: {e}")
+        return success_count
 
 def scroll_to_element(browser, element):
     try:
@@ -350,9 +426,6 @@ def scroll_to_element(browser, element):
         logging.info(f"滚动到元素: {element.text}")
     except Exception as e:
         logging.error(f"滚动到元素时出错: {e}")
-
-def wait_for_element_to_appear(browser, by, value, timeout=10):
-    return WebDriverWait(browser, timeout).until(EC.presence_of_element_located((by, value)))
 
 def main():
     logging.info("开始主逻辑")
@@ -365,5 +438,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
