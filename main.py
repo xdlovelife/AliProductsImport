@@ -8,6 +8,35 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.by import By
 from selenium.common.exceptions import NoSuchElementException, TimeoutException, NoSuchWindowException
+import logging
+
+# from colorlogger import ColoredFormatter
+#
+# # 创建 ColoredFormatter 对象
+# formatter = ColoredFormatter(
+#     "%(asctime)s - %(log_color)s%(levelname)s - %(message)s",
+#     datefmt="%Y-%m-%d %H:%M:%S",
+#     log_colors={
+#         'DEBUG': 'cyan',
+#         'INFO': 'green',
+#         'WARNING': 'yellow',
+#         'ERROR': 'red',
+#         'CRITICAL': 'bold_red',
+#     },
+#     secondary_log_colors={},
+#     style='%'
+# )
+#
+# # 创建 logger 对象
+# logger = logging.getLogger()
+# logger.setLevel(logging.INFO)
+#
+# # 创建控制台处理器，并设置格式化器
+# console_handler = logging.StreamHandler()
+# console_handler.setFormatter(formatter)
+# logger.addHandler(console_handler)
+
+
 
 # 配置日志记录
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -154,7 +183,8 @@ def open_alibaba(selected_categories, profile_path):
             browser = webdriver.Firefox(options=options)
             success_count = process_link(browser, "https://www.alibaba.com/", category, success_count)
 
-    browser.quit()  # 处理完所有产品后关闭浏览器
+    # 处理完所有产品后关闭浏览器
+    browser.quit()
 
 def process_link(browser, link, category, success_count):
     logging.info(f"处理分类: {category}")
@@ -164,7 +194,7 @@ def process_link(browser, link, category, success_count):
         browser.switch_to.window(browser.window_handles[0])
 
         # 等待搜索框加载完成
-        search_input = WebDriverWait(browser, 10).until(
+        search_input = WebDriverWait(browser, 60).until(
             EC.presence_of_element_located((By.CLASS_NAME, "search-bar-input"))
         )
 
@@ -173,13 +203,13 @@ def process_link(browser, link, category, success_count):
         search_input.send_keys(category)
 
         # 点击搜索按钮
-        search_button = WebDriverWait(browser, 10).until(
+        search_button = WebDriverWait(browser, 60).until(
             EC.element_to_be_clickable((By.CLASS_NAME, "fy23-icbu-search-bar-inner-button"))
         )
         search_button.click()
 
         # 等待产品列表加载完成
-        WebDriverWait(browser, 10).until(
+        WebDriverWait(browser, 60).until(
             EC.presence_of_element_located((By.CLASS_NAME, "organic-list"))
         )
 
@@ -222,28 +252,6 @@ def process_link(browser, link, category, success_count):
         logging.error(f"处理链接时发生错误: {e}")
         return success_count
 
-def handle_popup(browser):
-    try:
-        # 等待弹窗出现
-        WebDriverWait(browser, 10).until(
-            EC.presence_of_element_located((By.XPATH, "//div[contains(text(), 'This product is already in your store, what would you like to do?')]"))
-        )
-
-        # 检查是否出现弹窗
-        popup_message = browser.find_element(By.XPATH, "//div[contains(text(), 'This product is already in your store, what would you like to do?')]")
-
-        if popup_message:
-            logging.info("检测到产品已存在的弹窗")
-
-            # 直接关闭当前产品详情页
-            browser.close()
-            logging.info("关闭了产品已存在的弹窗")
-
-    except NoSuchElementException:
-        logging.info("未检测到产品已存在的弹窗")
-    except Exception as e:
-        logging.error(f"处理弹窗时发生错误: {e}")
-
 def handle_product_detail(browser, category, success_count):
     try:
         # 获取所有窗口句柄
@@ -262,25 +270,16 @@ def handle_product_detail(browser, category, success_count):
             browser.switch_to.window(new_window)
 
             # 等待产品详情页元素加载完成
-            product_title = WebDriverWait(browser, 10).until(EC.presence_of_element_located((By.TAG_NAME, "h1")))
+            product_title = WebDriverWait(browser, 60).until(EC.presence_of_element_located((By.TAG_NAME, "h1")))
 
             # 滚动到产品标题位置
             scroll_to_element(browser, product_title)
-
-            time.sleep(2)
-
-            # 处理弹窗
-            handle_popup(browser)
-
-            # 获取产品标题
-            product_title = browser.find_element(By.TAG_NAME, "h1").text
-            logging.info(f"产品详情页标题: {product_title}")
 
             # 处理产品详情页操作，这里可以根据实际需要修改
             success_count = handle_product_actions(browser, category, success_count)
 
             # 等待一段时间，可以根据实际情况调整
-            time.sleep(1)
+
             # 切换回原始窗口（产品搜索页）
             browser.switch_to.window(original_window)
         return success_count
@@ -291,24 +290,15 @@ def handle_product_detail(browser, category, success_count):
         logging.error(f"处理产品详情页时发生错误: {e}")
         return success_count
 
-def wait_for_element_to_appear(driver, by, selector, timeout=10):
-    try:
-        WebDriverWait(driver, timeout).until(
-            EC.presence_of_element_located((by, selector))
-        )
-    except TimeoutException:
-        logging.error(f"元素未能在 {timeout} 秒内出现: {selector}")
-        raise
-
 def handle_product_actions(browser, category, success_count):
     try:
-        add_btn_con = WebDriverWait(browser, 10).until(
+        add_btn_con = WebDriverWait(browser, 60).until(
             EC.element_to_be_clickable((By.XPATH, '//*[@id="addBtnCon"]')))
         add_btn_con.click()
         logging.info("点击了按钮//*[@id='addBtnCon']")
 
         try:
-            element = WebDriverWait(browser, 20).until(
+            element = WebDriverWait(browser, 60).until(
                 EC.presence_of_element_located((By.XPATH, '//span[@class="inactive" and text()="Draft"]'))
             )
             logging.info("成功加载 Draft 元素")
@@ -323,22 +313,25 @@ def handle_product_actions(browser, category, success_count):
         time.sleep(3)  # 可以根据实际情况调整等待时间
 
         # 检查是否出现 "This product is already in your store, what would you like to do?"
+        success_message = None
         try:
-            existing_product_msg = browser.find_element(By.XPATH,
-                                                        '//div[contains(text(), "This product is already in your store, what would you like to do?")]')
-            logging.info("产品已存在，不再处理当前产品")
+            success_message = browser.find_element(By.XPATH,
+                                                   '//div[@class="textcontainer centeralign home-content "]/p[1]')
+            if success_message.text == "This product is already in your store, what would you like to do?":
+                logging.info("产品已存在，不再处理当前产品")
+            browser.close()  # 关闭当前产品详情页标签页
             return success_count  # 跳出函数，不再处理当前产品
         except NoSuchElementException:
             pass  # 如果未找到消息元素，继续后续操作
 
-        time.sleep(3)  # 可以根据实际情况调整等待时间
+        time.sleep(2)  # 可以根据实际情况调整等待时间
 
         try:
             # 点击 description_tab_button 按钮
             description_tab_button = browser.find_element(By.XPATH, '//*[@id="description_tab_button"]')
             description_tab_button.click()
             logging.info("点击了 description_tab_button 按钮")
-            time.sleep(3)  # 等待页面加载
+            time.sleep(2)  # 等待页面加载
 
             # 点击 Variants 按钮
             variants_button = browser.find_element(By.CSS_SELECTOR,
@@ -351,14 +344,14 @@ def handle_product_actions(browser, category, success_count):
             all_variants_radio.click()
             logging.info("选择 Import all variants automatically 单选框")
 
-            time.sleep(3)  # 等待页面反应
+            time.sleep(2)  # 等待页面反应
 
             # 选择 Select which variants to include 单选框
             price_switch_radio = browser.find_element(By.ID, 'price_switch')
             price_switch_radio.click()
             logging.info("选择 Select which variants to include 单选框")
 
-            time.sleep(3)  # 等待页面反应
+            time.sleep(2)  # 等待页面反应
         except Exception as e:
             logging.error(f"点击 Variants 按钮时出现错误：{e}")
 
@@ -367,7 +360,7 @@ def handle_product_actions(browser, category, success_count):
                                              '//button[@class="accordion-tab accordion-custom-tab" and @data-actab-group="0" and @data-actab-id="3"]')
         images_button.click()
         logging.info("点击了 Images 按钮")
-        time.sleep(3)  # 等待页面反应
+        time.sleep(2)  # 等待页面反应
 
         add_to_store_button = browser.find_element(By.ID, 'addBtnSec')
         scroll_to_element(browser, add_to_store_button)
@@ -379,11 +372,14 @@ def handle_product_actions(browser, category, success_count):
 
         # 等待导入过程完成，确保 importify-app-container 元素出现
         try:
-            wait_for_element_to_appear(browser, By.ID, 'importify-app-container')
+            WebDriverWait(browser, 180).until(
+                EC.presence_of_element_located((By.ID, 'importify-app-container'))
+            )
             logging.info("产品正在导入中...")
 
-            # 等待成功消息出现
+            # 持续检测特定消息，直到成功或超时
             success_message = None
+            error_message = None
             timeout = 180  # 设定超时时间
             start_time = time.time()
             while time.time() - start_time < timeout:
@@ -393,15 +389,32 @@ def handle_product_actions(browser, category, success_count):
                     if success_message.text == "We have successfully created the product page.":
                         logging.info(f"产品导入成功, 共计: {success_count + 1}")
                         success_count += 1
+                        # 获取产品分类信息并记录日志
+                        logging.info(f"产品分类: {category}")
+                        break
+                    elif success_message.text == "We couldn't import this product, try again in a few minutes. If you keep facing this, contact us with the product URL.":
+                        logging.warning("产品导入失败，稍后再试或联系我们处理。")
+                        error_message = success_message.text
                         break
                     else:
                         logging.warning("产品正在导入中...")
-                except Exception as e:
-                    logging.warning("未检测到产品成功导入，继续等待...")
-                time.sleep(5)  # 每秒检查一次
+                except NoSuchElementException:
+                    pass  # 继续等待
+
+                try:
+                    error_message = browser.find_element(By.XPATH, '//p[@id="importify-error-container"]')
+                    logging.error(f"导入产品时出错: {error_message.text}")
+                    break
+                except NoSuchElementException:
+                    pass  # 如果未找到错误消息，继续等待
+
+                time.sleep(10)  # 每秒检查一次
 
             if not success_message or success_message.text != "We have successfully created the product page.":
-                logging.error("超时：未找到成功创建产品页面的消息")
+                if error_message and error_message.text == "We couldn't import this product, try again in a few minutes. If you keep facing this, contact us with the product URL.":
+                    logging.error("产品导入失败，请稍后再试或联系我们处理。")
+                else:
+                    logging.error("超时：未找到成功创建产品页面的消息")
 
         except Exception as e:
             logging.error(f"页面加载出错: {e}")
@@ -419,9 +432,10 @@ def handle_product_actions(browser, category, success_count):
         logging.error(f"处理产品详情页操作时发生错误: {e}")
         return success_count
 
+
 def scroll_to_element(browser, element):
     try:
-        WebDriverWait(browser, 10).until(EC.visibility_of(element))
+        WebDriverWait(browser, 60).until(EC.visibility_of(element))
         browser.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", element)
         logging.info(f"滚动到元素: {element.text}")
     except Exception as e:
@@ -429,7 +443,7 @@ def scroll_to_element(browser, element):
 
 def main():
     logging.info("开始主逻辑")
-    profile_path = get_valid_profile_path()
+    profile_path = read_profile_path()
     if not profile_path:
         messagebox.showerror("错误", "无效的配置路径。")
         return
