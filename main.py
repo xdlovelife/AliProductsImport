@@ -76,6 +76,8 @@ def get_valid_profile_path():
                                             f"已设置Firefox配置文件路径为:\n{profile_path}\n\n是否确认使用该路径？\n选择否将重设路径。")
         if confirm_reset:
             return profile_path
+        else:
+            return profile_path
 
     while True:
         path = simpledialog.askstring("Firefox配置文件", "请输入Firefox配置文件路径:")
@@ -92,6 +94,7 @@ def get_valid_profile_path():
                 return path
             except Exception as e:
                 messagebox.showerror("错误", f"无效的路径或配置文件: {e}")
+
 
 # 弹窗加载可供选择的产品分类
 def input_product_category(profile_path):
