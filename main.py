@@ -39,7 +39,7 @@ import logging
 
 
 # 配置日志记录
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.INFO, format='%(asctime)s ||  %(message)s')
 
 # 读取保存的Firefox配置文件路径
 def read_profile_path():
@@ -175,6 +175,7 @@ def open_alibaba(selected_categories, profile_path):
         return
 
     success_count = 0  # 初始化成功计数器
+    total_start_time = time.time()  # 记录总处理开始时间
 
     for category in selected_categories:
         try:
@@ -186,8 +187,8 @@ def open_alibaba(selected_categories, profile_path):
             browser = webdriver.Firefox(options=options)
             success_count = process_link(browser, "https://www.alibaba.com/", category, success_count)
 
-    # 处理完所有产品后关闭浏览器
-    browser.quit()
+    # # 处理完所有产品后关闭浏览器
+    # browser.quit()
 
 def process_link(browser, link, category, success_count):
     logging.info(f"处理分类: {category}")
@@ -233,6 +234,8 @@ def process_link(browser, link, category, success_count):
 
         # 循环处理产品
         for product in product_list:
+            start_time = time.time()  # 记录处理开始时间
+
             # 获取产品标题
             product_title = product.find_element(By.CLASS_NAME, "search-card-e-title")
             logging.info(f"当前产品标题: {product_title.text}")
@@ -240,15 +243,33 @@ def process_link(browser, link, category, success_count):
             # 滚动到产品标题所在位置
             scroll_to_element(browser, product_title)
             time.sleep(1)
+
             # 获取产品链接并打开
             product_link = product.find_element(By.TAG_NAME, "a").get_attribute("href")
             browser.execute_script(f"window.open('{product_link}')")
+
             # 处理产品详情页操作
             success_count = handle_product_detail(browser, category, success_count)
+
             # 等待一段时间，可以根据实际情况调整
             time.sleep(1)
 
+            end_time = time.time()  # 记录处理结束时间
+            processing_time = end_time - start_time  # 计算处理时间
+            logging.info(f"处理时间：{processing_time:.2f} 秒")  # 输出处理时间
+
+            # 获取屏幕宽度（如果无法获取，则使用默认值）
+            try:
+                root = tk.Tk()
+                screen_width = root.winfo_screenwidth()
+                root.destroy()
+            except tk.TclError:
+                logging.warning("无法获取屏幕宽度")
+
+            # 打印分割线
+            logging.info("=" * 20)  # 根据屏幕宽度计算分割线长度
         logging.info(f"成功处理的产品数量: {success_count}")
+
         return success_count
 
     except Exception as e:
@@ -271,18 +292,12 @@ def handle_product_detail(browser, category, success_count):
         if new_window:
             # 切换到新打开的产品详情页窗口
             browser.switch_to.window(new_window)
-
             # 等待产品详情页元素加载完成
             product_title = WebDriverWait(browser, 60).until(EC.presence_of_element_located((By.TAG_NAME, "h1")))
-
-            # 滚动到产品标题位置
-            scroll_to_element(browser, product_title)
-
             # 处理产品详情页操作，这里可以根据实际需要修改
             success_count = handle_product_actions(browser, category, success_count)
-
             # 等待一段时间，可以根据实际情况调整
-
+            time.sleep(1)
             # 切换回原始窗口（产品搜索页）
             browser.switch_to.window(original_window)
         return success_count
@@ -422,6 +437,8 @@ def handle_product_actions(browser, category, success_count):
         except Exception as e:
             logging.error(f"页面加载出错: {e}")
         time.sleep(2)
+
+
         # 关闭当前产品详情页标签页
         browser.close()
         time.sleep(1)
@@ -454,4 +471,8 @@ def main():
     input_product_category(profile_path)
 
 if __name__ == "__main__":
-    main()
+    # 获取有效的Firefox配置文件路径
+    profile_path = get_valid_profile_path()
+
+    # 弹窗加载并验证产品分类
+    input_product_category(profile_path)
