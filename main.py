@@ -1,286 +1,170 @@
-import tkinter as tk
 import logging
 import time
-from tkinter import ttk, simpledialog, messagebox
-from selenium import webdriver
+import tkinter as tk
+from tkinter import filedialog
 from selenium.webdriver.common.action_chains import ActionChains
+from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.webdriver.common.by import By
-from selenium.common.exceptions import NoSuchElementException, TimeoutException, NoSuchWindowException
-import logging
+from selenium.common.exceptions import NoSuchElementException, TimeoutException, NoSuchWindowException ,StaleElementReferenceException
+from openpyxl import load_workbook
 
-# from colorlogger import ColoredFormatter
-#
-# # 创建 ColoredFormatter 对象
-# formatter = ColoredFormatter(
-#     "%(asctime)s - %(log_color)s%(levelname)s - %(message)s",
-#     datefmt="%Y-%m-%d %H:%M:%S",
-#     log_colors={
-#         'DEBUG': 'cyan',
-#         'INFO': 'green',
-#         'WARNING': 'yellow',
-#         'ERROR': 'red',
-#         'CRITICAL': 'bold_red',
-#     },
-#     secondary_log_colors={},
-#     style='%'
-# )
-#
-# # 创建 logger 对象
-# logger = logging.getLogger()
-# logger.setLevel(logging.INFO)
-#
-# # 创建控制台处理器，并设置格式化器
-# console_handler = logging.StreamHandler()
-# console_handler.setFormatter(formatter)
-# logger.addHandler(console_handler)
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s')
+logger = logging.getLogger(__name__)
+
+chrome_driver_path = 'D:\\chromedriver-win64\\chromedriver.exe'
+chromium_binary_path = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe'
+
+# 用户数据目录路径（保存已安装插件和用户配置）
+user_data_dir = 'C:\\Users\\Administrator\\AppData\\Local\\Google\\Chrome\\User Data'  # 请根据实际路径进行调整
+
+options = Options()
+options.binary_location = chromium_binary_path
+options = webdriver.ChromeOptions()
 
 
-
-# 配置日志记录
-logging.basicConfig(level=logging.INFO, format='%(asctime)s ||  %(message)s')
-
-# 读取保存的Firefox配置文件路径
-def read_profile_path():
-    try:
-        with open("firefox_profile.txt") as file:
-            return file.read().strip()
-    except FileNotFoundError:
-        return ""
-
-# 保存有效路径到文件
-def save_profile_path(path):
-    with open("firefox_profile.txt", "w") as file:
-        file.write(path)
-
-# 保存分类列表到文件
-def save_categories(categories):
-    with open("categories.txt", "w") as file:
-        for category in categories:
-            file.write(f"{category}\n")
-
-# 读取分类列表从文件
-def read_categories():
-    try:
-        with open("categories.txt") as file:
-            return [line.strip() for line in file.readlines()]
-    except FileNotFoundError:
-        return []
-
-# 弹窗加载和验证Firefox配置文件路径
-def get_valid_profile_path():
-    profile_path = read_profile_path()
-    if profile_path:
-        confirm_reset = messagebox.askyesno("确认配置路径",
-                                            f"已设置Firefox配置文件路径为:\n{profile_path}\n\n是否确认使用该路径？\n选择否将重设路径。")
-        if confirm_reset:
-            return profile_path
-        else:
-            return profile_path
-
-    while True:
-        path = simpledialog.askstring("Firefox配置文件", "请输入Firefox配置文件路径:")
-        if not path:
-            messagebox.showerror("错误", "请输入有效的路径。")
-        else:
-            try:
-                # 检查路径是否有效
-                options = webdriver.FirefoxOptions()
-                options.add_argument(f"-profile {path}")
-                driver = webdriver.Firefox(options=options)
-                driver.quit()
-                save_profile_path(path)
-                return path
-            except Exception as e:
-                messagebox.showerror("错误", f"无效的路径或配置文件: {e}")
+# 指定用户数据目录
+options.add_argument(f'--user-data-dir={user_data_dir}')
 
 
-# 弹窗加载可供选择的产品分类
-def input_product_category(profile_path):
-    root = tk.Tk()
-    root.title("批量输入产品分类")
-
-    # 设置窗口大小和位置
-    window_width = 500
-    window_height = 400
-    screen_width = root.winfo_screenwidth()
-    screen_height = root.winfo_screenheight()
-    x = (screen_width - window_width) // 2
-    y = (screen_height - window_height) // 2
-    root.geometry(f"{window_width}x{window_height}+{x}+{y}")
-
-    categories = read_categories()  # 从文件读取分类列表
-
-    # 更新显示产品分类列表
-    def update_category_list():
-        listbox.delete(0, tk.END)
-        for category in categories:
-            listbox.insert(tk.END, category)
-
-    # 添加分类
-    def add_category():
-        category = category_entry.get().strip()
-        if category:
-            categories.append(category)
-            update_category_list()
-            category_entry.delete(0, tk.END)  # 清空输入框内容
-
-    # 删除选定分类
-    def delete_category():
-        selection = listbox.curselection()
-        if selection:
-            index = selection[0]
-            del categories[index]
-            update_category_list()
-
-    # 创建标签和输入框
-    ttk.Label(root, text="产品分类列表").pack(pady=10)
-    listbox = tk.Listbox(root)
-    listbox.pack()
-
-    update_category_list()  # 更新显示分类列表
-
-    # 创建输入框和按钮
-    category_entry = ttk.Entry(root)
-    category_entry.pack()
-    ttk.Button(root, text="添加分类", command=add_category).pack()
-    ttk.Button(root, text="删除选定分类", command=delete_category).pack()
-
-    # 定义确认按钮的回调函数
-    def confirm_input():
-        if categories:
-            save_categories(categories)  # 保存分类列表到文件
-            root.destroy()  # 销毁主窗口
-            open_alibaba(categories, profile_path)  # 将 profile_path 和分类列表作为参数传递
-        else:
-            messagebox.showwarning("警告", "请输入至少一个分类！")
-
-    # 创建确认按钮
-    ttk.Button(root, text="开始执行", command=confirm_input).pack(pady=10)
-
-    root.mainloop()
-
-# 打开阿里巴巴并处理链接
-def open_alibaba(selected_categories, profile_path):
-    logging.info("打开阿里巴巴页面")
-    options = webdriver.FirefoxOptions()
-    options.add_argument(f"-profile {profile_path}")  # 设置Firefox配置文件路径
-    options.headless = False  # 设置为 False 可以看到浏览器操作过程
-    try:
-        browser = webdriver.Firefox(options=options)
-    except Exception as e:
-        logging.error(f"无法启动Firefox: {e}")
-        messagebox.showerror("错误", f"无法启动Firefox: {e}")
-        return
-
-    success_count = 0  # 初始化成功计数器
-    total_start_time = time.time()  # 记录总处理开始时间
-
-    for category in selected_categories:
+def open_browser():
+    attempts = 3
+    for attempt in range(1, attempts + 1):
         try:
-            success_count = process_link(browser, "https://www.alibaba.com/", category, success_count)
+            driver = webdriver.Chrome(service=Service(chrome_driver_path), options=options)
+            logger.info("Chrome WebDriver启动成功。")
+            return driver
         except Exception as e:
-            logging.error(f"处理分类 {category} 时发生错误: {e}")
-            # 如果出现错误，关闭浏览器，重新打开并处理
-            browser.quit()
-            browser = webdriver.Firefox(options=options)
-            success_count = process_link(browser, "https://www.alibaba.com/", category, success_count)
+            logger.error(f"第 {attempt} 次尝试启动Chrome失败: {str(e)}")
+            if attempt == attempts:
+                logger.error("达到最大重试次数。退出程序。")
+                return None
+            time.sleep(3)  # 等待后重试
+    return None
 
-    # # 处理完所有产品后关闭浏览器
-    # browser.quit()
 
-def process_link(browser, link, category, success_count):
-    logging.info(f"处理分类: {category}")
+def open_alibaba(driver, selected_categories, sheet_name):
     try:
-        logging.info(f"处理链接: {link}")
-        browser.get(link)
-        browser.switch_to.window(browser.window_handles[0])
+        if driver:
+            url = "https://www.alibaba.com/"
+            logger.info(f"访问页面: {url}")
+            driver.get(url)
+            # 等待 fy23-icbu-search-bar-inner 元素加载完成
+            search_bar = WebDriverWait(driver, 10).until(
+                EC.presence_of_element_located((By.CLASS_NAME, 'fy23-icbu-search-bar-inner'))
+            )
+
+            for category in selected_categories:
+                try:
+                    process_link(driver, "https://www.alibaba.com/", category, sheet_name)
+                except Exception as e:
+                    logger.error(f"处理类别 '{category}' 出错: {e}")
+                    # Handle specific errors or retry logic here if needed
+
+            driver.quit()
+
+    except NoSuchElementException as e:
+        logger.error(f"未找到元素：{e}")
+    except TimeoutException as e:
+        logger.error(f"超时等待元素加载：{e}")
+    except Exception as e:
+        logger.error(f"发生异常: {str(e)}")
+
+
+def process_link(driver, link, category, sheet_name):
+    try:
+        logger.info(f"处理分类: {category}")
+        logger.info(f"处理链接: {link}")
+        driver.get(link)
+        driver.switch_to.window(driver.window_handles[0])
 
         # 等待搜索框加载完成
-        search_input = WebDriverWait(browser, 60).until(
-            EC.presence_of_element_located((By.CLASS_NAME, "search-bar-input"))
+        search_input = WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located((By.CSS_SELECTOR, 'input.search-bar-input.util-ellipsis'))
         )
-
         # 将产品分类名称填入搜索框
         search_input.clear()
         search_input.send_keys(category)
 
         # 点击搜索按钮
-        search_button = WebDriverWait(browser, 60).until(
-            EC.element_to_be_clickable((By.CLASS_NAME, "fy23-icbu-search-bar-inner-button"))
-        )
+        search_button = driver.find_element(By.CSS_SELECTOR, 'button.fy23-icbu-search-bar-inner-button')
         search_button.click()
 
         # 等待产品列表加载完成
-        WebDriverWait(browser, 60).until(
+        WebDriverWait(driver, 60).until(
             EC.presence_of_element_located((By.CLASS_NAME, "organic-list"))
         )
 
         # 模拟向下滚动页面，直到加载完所有产品
-        last_height = browser.execute_script("return document.body.scrollHeight")
+        last_height = driver.execute_script("return document.body.scrollHeight")
         while True:
-            browser.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+            driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
             time.sleep(2)  # 等待加载
-            new_height = browser.execute_script("return document.body.scrollHeight")
+            new_height = driver.execute_script("return document.body.scrollHeight")
             if new_height == last_height:
                 break
             last_height = new_height
 
         # 加载完所有产品后，获取产品列表的长度并打印
-        product_list = browser.find_elements(By.CLASS_NAME, "fy23-search-card")
+        product_list = driver.find_elements(By.CLASS_NAME, "fy23-search-card")
         num_products = len(product_list)
-        logging.info(f"共抓取到的产品数量：{num_products}")
+        logger.info(f"共抓取到的产品数量：{num_products}")
 
         # 循环处理产品
+        success_count = 0
         for product in product_list:
             start_time = time.time()  # 记录处理开始时间
 
-            # 获取产品标题
-            product_title = product.find_element(By.CLASS_NAME, "search-card-e-title")
-            logging.info(f"当前产品标题: {product_title.text}")
-
-            # 滚动到产品标题所在位置
-            scroll_to_element(browser, product_title)
-            time.sleep(1)
-
-            # 获取产品链接并打开
-            product_link = product.find_element(By.TAG_NAME, "a").get_attribute("href")
-            browser.execute_script(f"window.open('{product_link}')")
-
-            # 处理产品详情页操作
-            success_count = handle_product_detail(browser, category, success_count)
-
-            # 等待一段时间，可以根据实际情况调整
-            time.sleep(1)
-
-            end_time = time.time()  # 记录处理结束时间
-            processing_time = end_time - start_time  # 计算处理时间
-            logging.info(f"处理时间：{processing_time:.2f} 秒")  # 输出处理时间
-
-            # 获取屏幕宽度（如果无法获取，则使用默认值）
             try:
-                root = tk.Tk()
-                screen_width = root.winfo_screenwidth()
-                root.destroy()
-            except tk.TclError:
-                logging.warning("无法获取屏幕宽度")
+                # 获取产品标题
+                product_title = product.find_element(By.CLASS_NAME, "search-card-e-title")
+                logger.info(f"当前产品标题: {product_title.text}")
 
-            # 打印分割线
-            logging.info("=" * 20)  # 根据屏幕宽度计算分割线长度
-        logging.info(f"成功处理的产品数量: {success_count}")
+                # 滚动到产品标题所在位置
+                scroll_to_element(driver, product_title)
+                time.sleep(1)
 
+                # 获取产品链接并打开
+                product_link = product.find_element(By.TAG_NAME, "a").get_attribute("href")
+                driver.execute_script(f"window.open('{product_link}')")
+
+                # 处理产品详情页操作
+                success_count = handle_product_detail(driver, category, success_count, sheet_name)
+
+                # 等待一段时间，可以根据实际情况调整
+                time.sleep(1)
+
+                end_time = time.time()  # 记录处理结束时间
+                processing_time = end_time - start_time  # 计算处理时间
+                logger.info(f"处理时间：{processing_time:.2f} 秒")  # 输出处理时间
+
+                # 获取屏幕宽度（如果无法获取，则使用默认值）
+                screen_width = get_screen_width()
+                # 打印分割线
+                logger.info("=" * (screen_width // 10))  # 根据屏幕宽度计算分割线长度
+
+                success_count += 1
+            except NoSuchElementException as e:
+                logger.error(f"未找到产品标题或链接: {e}")
+            except Exception as e:
+                logger.error(f"处理产品时发生错误: {e}")
+
+        logger.info(f"成功处理的产品数量: {success_count}")
         return success_count
 
     except Exception as e:
-        logging.error(f"处理链接时发生错误: {e}")
-        return success_count
+        logger.error(f"处理链接时发生错误: {e}")
+        return 0
 
-def handle_product_detail(browser, category, success_count):
+
+def handle_product_detail(driver, category, success_count, sheet_name):
     try:
         # 获取所有窗口句柄
-        original_window = browser.current_window_handle
-        handles = browser.window_handles
+        original_window = driver.current_window_handle
+        handles = driver.window_handles
 
         # 获取新打开的窗口句柄
         new_window = None
@@ -291,32 +175,91 @@ def handle_product_detail(browser, category, success_count):
 
         if new_window:
             # 切换到新打开的产品详情页窗口
-            browser.switch_to.window(new_window)
+            driver.switch_to.window(new_window)
             # 等待产品详情页元素加载完成
-            product_title = WebDriverWait(browser, 60).until(EC.presence_of_element_located((By.TAG_NAME, "h1")))
+            product_title = WebDriverWait(driver, 60).until(EC.presence_of_element_located((By.TAG_NAME, "h1")))
             # 处理产品详情页操作，这里可以根据实际需要修改
-            success_count = handle_product_actions(browser, category, success_count)
+            success_count = handle_product_actions(driver, category, success_count, sheet_name)
             # 等待一段时间，可以根据实际情况调整
             time.sleep(1)
             # 切换回原始窗口（产品搜索页）
-            browser.switch_to.window(original_window)
+            driver.switch_to.window(original_window)
         return success_count
     except NoSuchWindowException as e:
-        logging.error(f"浏览器窗口丢失：{e}")
+        logger.error(f"浏览器窗口丢失：{e}")
         return success_count
     except Exception as e:
-        logging.error(f"处理产品详情页时发生错误: {e}")
+        logger.error(f"处理产品详情页时发生错误: {e}")
+        close_tab(driver, new_window)  # 关闭出错的产品详情页标签页
         return success_count
 
-def handle_product_actions(browser, category, success_count):
+
+
+def fetch_dropdown_options(driver, sheet_name):
+    logger = logging.getLogger(__name__)  # 获取当前模块的日志记录器
+
     try:
-        add_btn_con = WebDriverWait(browser, 60).until(
+        # 确保 sheet_name 是字符串而不是列表
+        if isinstance(sheet_name, list):
+            sheet_name = sheet_name[0]  # 取列表中的第一个元素
+
+        logger.info(f"输入关键词: {sheet_name}")
+
+        # 等待下拉菜单的整个区域可见
+        dropdown = WebDriverWait(driver, 10).until(
+            EC.visibility_of_element_located((By.CLASS_NAME, 'ms-drop')))
+        logger.info("找到下拉菜单区域")
+
+        # 找到搜索框并输入关键词
+        search_box = dropdown.find_element(By.CSS_SELECTOR, '.ms-search input[type="text"]')
+        search_box.clear()
+        search_box.send_keys(sheet_name.lower())  # 输入小写版本的关键词
+        logger.info(f"在搜索框中输入关键词: {sheet_name.lower()}")
+
+        # 等待搜索结果加载完成
+        WebDriverWait(driver, 60).until(EC.invisibility_of_element_located((By.CLASS_NAME, 'ms-ajax-search-loader')))
+        logger.info("等待搜索结果加载完成")
+
+        # 取消其他复选框的勾选状态
+        checkboxes = dropdown.find_elements(By.CSS_SELECTOR, 'input[data-name="selectItem"]')
+        for checkbox in checkboxes:
+            if checkbox.is_selected():
+                checkbox.click()
+                logger.info(f"取消复选框的选中状态: {checkbox.get_attribute('value')}")
+
+        # 查找所有结果项中的 span 元素，并匹配文本
+        for checkbox in checkboxes:
+            try:
+                span_element = checkbox.find_element(By.XPATH, './following-sibling::span')
+                if span_element.text.lower() == sheet_name.lower():
+                    # 如果找到匹配的项，勾选复选框
+                    checkbox.click()
+                    logger.info(f"勾选复选框: {checkbox.get_attribute('value')}")
+                    break  # 找到匹配项后退出循环
+            except NoSuchElementException:
+                logger.warning("未找到 span 元素")
+            except StaleElementReferenceException:
+                logger.warning("发生 stale element reference 异常，尝试重新查找元素")
+                # 可以在这里添加重新查找元素的代码
+
+
+    except TimeoutException:
+        logger.error("超时：无法加载下拉菜单或搜索结果")
+    except Exception as e:
+        logger.error(f"发生异常: {str(e)}")
+
+
+
+def handle_product_actions(browser, category, success_count, sheet_name):
+    logger.info(f"处理产品详情页操作: {category}, {sheet_name}!!!")
+    try:
+        add_btn_con = WebDriverWait(browser, 10).until(
             EC.element_to_be_clickable((By.XPATH, '//*[@id="addBtnCon"]')))
         add_btn_con.click()
         logging.info("点击了按钮//*[@id='addBtnCon']")
 
         try:
-            element = WebDriverWait(browser, 60).until(
+            element = WebDriverWait(browser, 20).until(
                 EC.presence_of_element_located((By.XPATH, '//span[@class="inactive" and text()="Draft"]'))
             )
             logging.info("成功加载 Draft 元素")
@@ -327,6 +270,8 @@ def handle_product_actions(browser, category, success_count):
             time.sleep(2)
         except Exception as e:
             logging.error(f"等待和点击 Draft 元素时出现错误：{e}")
+            close_current_tab(browser)
+            return success_count
 
         time.sleep(3)  # 可以根据实际情况调整等待时间
 
@@ -344,12 +289,35 @@ def handle_product_actions(browser, category, success_count):
 
         time.sleep(2)  # 可以根据实际情况调整等待时间
 
+        # 继续后续操作，例如选择下拉菜单中的类别等
+        select_button = WebDriverWait(browser, 10).until(
+            EC.element_to_be_clickable((By.XPATH, '//button[@class="ms-choice"]'))
+        )
+        logging.info("等待并点击选择按钮")
+        select_button.click()
+
+        dropdown = WebDriverWait(browser, 10).until(
+            EC.visibility_of_element_located((By.CLASS_NAME, "ms-drop"))
+        )
+
+        # # 从 Excel 文件中读取工作表名称作为搜索关键词
+        search_input = dropdown.find_element(By.CSS_SELECTOR, ".ms-search input[type='text']")
+        search_input.clear()
+        search_input.send_keys(sheet_name)
+        logging.info(f"输入关键词: {sheet_name}")
+
+        WebDriverWait(browser, 10)
+
+        # 选择匹配的复选框
+        fetch_dropdown_options(browser, sheet_name)
+        time.sleep(3)
+
         try:
             # 点击 description_tab_button 按钮
             description_tab_button = browser.find_element(By.XPATH, '//*[@id="description_tab_button"]')
             description_tab_button.click()
             logging.info("点击了 description_tab_button 按钮")
-            time.sleep(2)  # 等待页面加载
+            time.sleep(3)  # 等待页面加载
 
             # 点击 Variants 按钮
             variants_button = browser.find_element(By.CSS_SELECTOR,
@@ -362,23 +330,25 @@ def handle_product_actions(browser, category, success_count):
             all_variants_radio.click()
             logging.info("选择 Import all variants automatically 单选框")
 
-            time.sleep(2)  # 等待页面反应
+            time.sleep(3)  # 等待页面反应
 
             # 选择 Select which variants to include 单选框
             price_switch_radio = browser.find_element(By.ID, 'price_switch')
             price_switch_radio.click()
             logging.info("选择 Select which variants to include 单选框")
 
-            time.sleep(2)  # 等待页面反应
+            time.sleep(3)  # 等待页面反应
         except Exception as e:
             logging.error(f"点击 Variants 按钮时出现错误：{e}")
+            close_current_tab(browser)
+            return success_count
 
         # 点击 Images 按钮
         images_button = browser.find_element(By.XPATH,
                                              '//button[@class="accordion-tab accordion-custom-tab" and @data-actab-group="0" and @data-actab-id="3"]')
         images_button.click()
         logging.info("点击了 Images 按钮")
-        time.sleep(2)  # 等待页面反应
+        time.sleep(3)  # 等待页面反应
 
         add_to_store_button = browser.find_element(By.ID, 'addBtnSec')
         scroll_to_element(browser, add_to_store_button)
@@ -390,15 +360,12 @@ def handle_product_actions(browser, category, success_count):
 
         # 等待导入过程完成，确保 importify-app-container 元素出现
         try:
-            WebDriverWait(browser, 180).until(
-                EC.presence_of_element_located((By.ID, 'importify-app-container'))
-            )
+            wait_for_element_to_appear(browser, By.ID, 'importify-app-container')
             logging.info("产品正在导入中...")
 
-            # 持续检测特定消息，直到成功或超时
+            # 等待成功消息出现
             success_message = None
-            error_message = None
-            timeout = 180  # 设定超时时间
+            timeout = 100  # 设定超时时间
             start_time = time.time()
             while time.time() - start_time < timeout:
                 try:
@@ -407,51 +374,99 @@ def handle_product_actions(browser, category, success_count):
                     if success_message.text == "We have successfully created the product page.":
                         logging.info(f"产品导入成功, 共计: {success_count + 1}")
                         success_count += 1
-                        # 获取产品分类信息并记录日志
-                        logging.info(f"产品分类: {category}")
-                        break
-                    elif success_message.text == "We couldn't import this product, try again in a few minutes. If you keep facing this, contact us with the product URL.":
-                        logging.warning("产品导入失败，稍后再试或联系我们处理。")
-                        error_message = success_message.text
                         break
                     else:
                         logging.warning("产品正在导入中...")
-                except NoSuchElementException:
-                    pass  # 继续等待
-
-                try:
-                    error_message = browser.find_element(By.XPATH, '//p[@id="importify-error-container"]')
-                    logging.error(f"导入产品时出错: {error_message.text}")
-                    break
-                except NoSuchElementException:
-                    pass  # 如果未找到错误消息，继续等待
-
-                time.sleep(10)  # 每秒检查一次
+                except Exception as e:
+                    logging.warning("未检测到产品成功导入，继续等待...")
+                time.sleep(5)  # 每秒检查一次
 
             if not success_message or success_message.text != "We have successfully created the product page.":
-                if error_message and error_message.text == "We couldn't import this product, try again in a few minutes. If you keep facing this, contact us with the product URL.":
-                    logging.error("产品导入失败，请稍后再试或联系我们处理。")
-                else:
-                    logging.error("超时：未找到成功创建产品页面的消息")
+                logging.error("超时：未找到成功创建产品页面的消息")
 
         except Exception as e:
             logging.error(f"页面加载出错: {e}")
+            close_current_tab(browser)
+
         time.sleep(2)
-
-
-        # 关闭当前产品详情页标签页
-        browser.close()
-        time.sleep(1)
-
+        close_current_tab(browser)
         return success_count
 
     except NoSuchWindowException as e:
         logging.error(f"浏览器窗口丢失：{e}")
+        close_current_tab(browser)
         return success_count
     except Exception as e:
         logging.error(f"处理产品详情页操作时发生错误: {e}")
+        close_current_tab(browser)
         return success_count
 
+def close_current_tab(browser):
+    try:
+        current_window_handle = browser.current_window_handle
+        browser.switch_to.window(current_window_handle)
+        browser.close()
+        logging.info("已关闭处理出错的标签页。")
+    except NoSuchWindowException as e:
+        logging.error(f"浏览器窗口丢失：{e}")
+    except Exception as e:
+        logging.error(f"关闭标签页时发生错误: {e}")
+def wait_for_element_to_appear(driver, by, selector, timeout=10):
+    try:
+        WebDriverWait(driver, timeout).until(
+            EC.presence_of_element_located((by, selector))
+        )
+    except TimeoutException:
+        logging.error(f"元素未能在 {timeout} 秒内出现: {selector}")
+        raise
+def close_tab(driver, window_handle):
+    try:
+        if window_handle:
+            driver.switch_to.window(window_handle)
+            driver.close()
+            logger.info("关闭出错的产品详情页标签页")
+    except Exception as e:
+        logger.error(f"关闭标签页时发生错误: {e}")
+def get_screen_width():
+    try:
+        root = tk.Tk()
+        screen_width = root.winfo_screenwidth()
+        root.destroy()
+        return screen_width
+    except Exception as e:
+        logger.error(f"获取屏幕宽度时出错: {e}")
+        return 1000  # 返回默认屏幕宽度
+
+
+def browse_excel_file():
+    root = tk.Tk()
+    root.withdraw()  # 隐藏Tk窗口
+    file_path = filedialog.askopenfilename(filetypes=[("Excel files", "*.xlsx;*.xls")])
+    return file_path
+
+
+def read_categories_from_excel(file_path):
+    try:
+        wb = load_workbook(file_path, read_only=True)
+        sheet = wb.active
+        categories = []
+        for row in sheet.iter_rows(min_row=3, values_only=True):
+            category = row[0]
+            if category:
+                categories.append(category)
+        return categories
+    except Exception as e:
+        logger.error(f"Error reading Excel file: {e}")
+        return []
+
+def read_sheet_names_from_excel(file_path):
+    sheet_name = []
+    try:
+        wb = load_workbook(filename=file_path)
+        sheet_name = wb.sheetnames
+    except Exception as e:
+        logger.error(f"读取Excel文件时发生错误: {e}")
+    return sheet_name
 
 def scroll_to_element(browser, element):
     try:
@@ -461,18 +476,41 @@ def scroll_to_element(browser, element):
     except Exception as e:
         logging.error(f"滚动到元素时出错: {e}")
 
-def main():
-    logging.info("开始主逻辑")
-    profile_path = read_profile_path()
-    if not profile_path:
-        messagebox.showerror("错误", "无效的配置路径。")
-        return
 
-    input_product_category(profile_path)
+def main():
+    driver = None  # 初始化 driver 变量，以便在后续代码中访问
+
+    try:
+        file_path = browse_excel_file()
+        if not file_path:
+            logger.error("未选择Excel文件。")
+            return
+
+        selected_categories = read_categories_from_excel(file_path)
+        if not selected_categories:
+            logger.error("未从Excel文件中读取到任何类别。")
+            return
+        logger.info(f"从Excel文件中读取的要导入的产品名称: {selected_categories}")
+        driver = open_browser()
+        if not driver:
+            logger.error("无法启动浏览器。")
+            return
+
+        # 获取工作表名称列表
+        sheet_name = read_sheet_names_from_excel(file_path)
+        if not sheet_name:
+            logger.error("未从Excel文件中读取到任何工作表名称。")
+            return
+
+        logger.info(f"从Excel文件中读取的工作表名称: {sheet_name}")
+
+        # 调用 open_alibaba() 函数，并传递 driver、selected_categories 和 sheet_names
+        open_alibaba(driver, selected_categories, sheet_name)
+
+    except Exception as e:
+        logger.error(f"发生异常: {str(e)}")
+        pass
+
 
 if __name__ == "__main__":
-    # 获取有效的Firefox配置文件路径
-    profile_path = get_valid_profile_path()
-
-    # 弹窗加载并验证产品分类
-    input_product_category(profile_path)
+    main()
