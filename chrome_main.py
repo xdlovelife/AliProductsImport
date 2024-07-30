@@ -217,35 +217,40 @@ def fetch_dropdown_options(driver, sheet_name):
         logger.info(f"在搜索框中输入关键词: {sheet_name.lower()}")
 
         # 等待搜索结果加载完成
-        WebDriverWait(driver, 60).until(EC.invisibility_of_element_located((By.CLASS_NAME, 'ms-ajax-search-loader')))
+        WebDriverWait(driver, 10).until(
+            EC.staleness_of(search_box)  # 等待搜索框不再可见，即搜索结果加载完成
+        )
         logger.info("等待搜索结果加载完成")
 
-        # 取消除了匹配项之外的所有复选框的选中状态
-        checkboxes = dropdown.find_elements(By.CSS_SELECTOR, 'input[data-name="selectItem"]')
-        for checkbox in checkboxes:
-            try:
-                span_element = checkbox.find_element(By.XPATH, './following-sibling::span')
-                if span_element.text.lower() == sheet_name.lower():
-                    # 如果找到匹配的项，勾选复选框
-                    checkbox.click()
-                    logger.info(f"勾选复选框: {checkbox.get_attribute('value')}")
-                else:
-                    # 如果不是匹配的项，取消复选框的选中状态
-                    if checkbox.is_selected():
-                        checkbox.click()
-                        logger.info(f"取消复选框的选中状态: {checkbox.get_attribute('value')}")
-            except NoSuchElementException:
-                logger.warning("未找到 span 元素")
-            except StaleElementReferenceException:
-                logger.warning("发生 stale element reference 异常，尝试重新查找元素")
-                # 可以在这里添加重新查找元素的代码
+        # 使用JavaScript取消所有复选框的选中状态
+        driver.execute_script("""
+            var checkboxes = document.querySelectorAll('input[data-name="selectItem"]');
+            checkboxes.forEach(function(checkbox) {
+                if (checkbox.checked) {
+                    checkbox.click();
+                }
+            });
+        """)
+        logger.info("取消所有复选框的选中状态")
 
-
+        # 使用JavaScript选中与给定关键词匹配的复选框
+        driver.execute_script("""
+            var checkboxes = document.querySelectorAll('input[data-name="selectItem"]');
+            var searchTerm = arguments[0].toLowerCase();
+            checkboxes.forEach(function(checkbox) {
+                var spanElement = checkbox.nextElementSibling;
+                if (spanElement && spanElement.innerText.toLowerCase() === searchTerm) {
+                    checkbox.click();
+                }
+            });
+        """, sheet_name.lower())
+        logger.info(f"选中匹配关键词的复选框: {sheet_name}")
 
     except TimeoutException:
         logger.error("超时：无法加载下拉菜单或搜索结果")
     except Exception as e:
         logger.error(f"发生异常: {str(e)}")
+
 
 
 
