@@ -9,9 +9,11 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import NoSuchElementException, TimeoutException, NoSuchWindowException ,StaleElementReferenceException
+from selenium.common.exceptions import NoSuchElementException, TimeoutException, NoSuchWindowException
 from openpyxl import load_workbook
+from contextlib import contextmanager
 
+# 设置日志记录器的配置
 logging.basicConfig(level=logging.INFO, format='%(asctime)s || %(message)s')
 logger = logging.getLogger(__name__)
 
@@ -23,27 +25,29 @@ user_data_dir = 'C:\\Users\\Administrator\\AppData\\Local\\Google\\Chrome\\User 
 
 options = Options()
 options.binary_location = chromium_binary_path
-options = webdriver.ChromeOptions()
-
-
 # 指定用户数据目录
 options.add_argument(f'--user-data-dir={user_data_dir}')
+options.add_argument('--ignore-certificate-errors')
 
 
+@contextmanager
 def open_browser():
     attempts = 3
+    driver = None
     for attempt in range(1, attempts + 1):
         try:
             driver = webdriver.Chrome(service=Service(chrome_driver_path), options=options)
             logger.info("Chrome WebDriver启动成功。")
-            return driver
+            yield driver  # 返回 driver 对象给 with 语句的 as 变量
+            return
         except Exception as e:
-            logger.error(f"第 {attempt} 次尝试启动Chrome失败: {str(e)}")
             if attempt == attempts:
                 logger.error("达到最大重试次数。退出程序。")
-                return None
+                raise
             time.sleep(3)  # 等待后重试
-    return None
+        finally:
+            if driver:
+                driver.quit()  # 确保在任何情况下都能关闭 WebDriver
 
 
 def open_alibaba(driver, selected_categories, sheet_name):
@@ -70,8 +74,7 @@ def open_alibaba(driver, selected_categories, sheet_name):
         logger.error(f"未找到元素：{e}")
     except TimeoutException as e:
         logger.error(f"超时等待元素加载：{e}")
-    except Exception as e:
-        logger.error(f"发生异常: {str(e)}")
+
 
 
 def process_link(driver, link, category, sheet_name):
@@ -146,19 +149,16 @@ def process_link(driver, link, category, sheet_name):
                 # 打印分割线
                 logger.info("=" * (screen_width // 10))  # 根据屏幕宽度计算分割线长度
 
-                success_count += 1
             except NoSuchElementException as e:
                 logger.error(f"未找到产品标题或链接: {e}")
             except Exception as e:
                 logger.error(f"处理产品时发生错误: {e}")
 
-        logger.info(f"成功处理的产品数量: {success_count}")
         return success_count
 
     except Exception as e:
         logger.error(f"处理链接时发生错误: {e}")
         return 0
-
 
 def handle_product_detail(driver, category, success_count, sheet_name):
     try:
@@ -187,13 +187,16 @@ def handle_product_detail(driver, category, success_count, sheet_name):
         return success_count
     except NoSuchWindowException as e:
         logger.error(f"浏览器窗口丢失：{e}")
+        close_tab(driver, new_window)  # 关闭出错的产品详情页标签页
+        return success_count
+    except TimeoutException as e:
+        logger.error(f"超时等待产品详情页加载：{e}")
+        close_tab(driver, new_window)  # 关闭出错的产品详情页标签页
         return success_count
     except Exception as e:
         logger.error(f"处理产品详情页时发生错误: {e}")
         close_tab(driver, new_window)  # 关闭出错的产品详情页标签页
         return success_count
-
-
 
 def fetch_dropdown_options(driver, sheet_name):
     logger = logging.getLogger(__name__)  # 获取当前模块的日志记录器
@@ -248,8 +251,7 @@ def fetch_dropdown_options(driver, sheet_name):
 
     except TimeoutException:
         logger.error("超时：无法加载下拉菜单或搜索结果")
-    except Exception as e:
-        logger.error(f"发生异常: {str(e)}")
+
 
 
 
@@ -274,7 +276,6 @@ def handle_product_actions(browser, category, success_count, sheet_name):
             time.sleep(2)
         except Exception as e:
             logging.error(f"等待和点击 Draft 元素时出现错误：{e}")
-            close_current_tab(browser)
             return success_count
 
         time.sleep(3)  # 可以根据实际情况调整等待时间
@@ -344,7 +345,6 @@ def handle_product_actions(browser, category, success_count, sheet_name):
             time.sleep(3)  # 等待页面反应
         except Exception as e:
             logging.error(f"点击 Variants 按钮时出现错误：{e}")
-            close_current_tab(browser)
             return success_count
 
         # 点击 Images 按钮
@@ -390,19 +390,15 @@ def handle_product_actions(browser, category, success_count, sheet_name):
 
         except Exception as e:
             logging.error(f"页面加载出错: {e}")
-            close_current_tab(browser)
-
         time.sleep(2)
-        close_current_tab(browser)
+        browser.close()
         return success_count
 
     except NoSuchWindowException as e:
         logging.error(f"浏览器窗口丢失：{e}")
-        close_current_tab(browser)
         return success_count
     except Exception as e:
         logging.error(f"处理产品详情页操作时发生错误: {e}")
-        close_current_tab(browser)
         return success_count
 
 def close_current_tab(browser):
@@ -415,6 +411,7 @@ def close_current_tab(browser):
         logging.error(f"浏览器窗口丢失：{e}")
     except Exception as e:
         logging.error(f"关闭标签页时发生错误: {e}")
+
 def wait_for_element_to_appear(driver, by, selector, timeout=10):
     try:
         WebDriverWait(driver, timeout).until(
@@ -441,13 +438,11 @@ def get_screen_width():
         logger.error(f"获取屏幕宽度时出错: {e}")
         return 1000  # 返回默认屏幕宽度
 
-
 def browse_excel_file():
     root = tk.Tk()
     root.withdraw()  # 隐藏Tk窗口
     file_path = filedialog.askopenfilename(filetypes=[("Excel files", "*.xlsx;*.xls")])
     return file_path
-
 
 def read_categories_from_excel(file_path):
     try:
@@ -482,8 +477,6 @@ def scroll_to_element(browser, element):
 
 
 def main():
-    driver = None  # 初始化 driver 变量，以便在后续代码中访问
-
     try:
         file_path = browse_excel_file()
         if not file_path:
@@ -495,26 +488,25 @@ def main():
             logger.error("未从Excel文件中读取到任何类别。")
             return
         logger.info(f"从Excel文件中读取的要导入的产品名称: {selected_categories}")
-        driver = open_browser()
-        if not driver:
-            logger.error("无法启动浏览器。")
-            return
 
-        # 获取工作表名称列表
-        sheet_name = read_sheet_names_from_excel(file_path)
-        if not sheet_name:
-            logger.error("未从Excel文件中读取到任何工作表名称。")
-            return
+        with open_browser() as driver:
+            if not driver:
+                logger.error("无法启动浏览器。")
+                return
 
-        logger.info(f"从Excel文件中读取的工作表名称: {sheet_name}")
+            # 获取工作表名称列表
+            sheet_name = read_sheet_names_from_excel(file_path)
+            if not sheet_name:
+                logger.error("未从Excel文件中读取到任何工作表名称。")
+                return
+            logger.info(f"从Excel文件中读取的工作表名称: {sheet_name}")
 
-        # 调用 open_alibaba() 函数，并传递 driver、selected_categories 和 sheet_names
-        open_alibaba(driver, selected_categories, sheet_name)
+            # 调用 open_alibaba() 函数，并传递 driver、selected_categories 和 sheet_names
+            open_alibaba(driver, selected_categories, sheet_name)
 
     except Exception as e:
-        logger.error(f"发生异常: {str(e)}")
         pass
-
+    input("已完成所有内容")
 
 if __name__ == "__main__":
     main()
