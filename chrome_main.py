@@ -32,6 +32,9 @@ options.binary_location = chromium_binary_path
 # 指定用户数据目录
 options.add_argument(f'--user-data-dir={user_data_dir}')
 options.add_argument('--ignore-certificate-errors')
+options.add_argument('--log-level=3')  # 仅显示错误信息
+
+
 
 
 @contextmanager
