@@ -1,3 +1,5 @@
+#版本信息：此版本生成exe
+
 import logging
 import time
 import tkinter as tk
@@ -12,6 +14,8 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import NoSuchElementException, TimeoutException, NoSuchWindowException
 from openpyxl import load_workbook
 from contextlib import contextmanager
+
+
 
 # 设置日志记录器的配置
 logging.basicConfig(level=logging.INFO, format='%(asctime)s || %(message)s')
@@ -276,6 +280,7 @@ def handle_product_actions(browser, category, success_count, sheet_name):
             time.sleep(2)
         except Exception as e:
             logging.error(f"等待和点击 Draft 元素时出现错误：{e}")
+            close_current_tab(browser)
             return success_count
 
         time.sleep(3)  # 可以根据实际情况调整等待时间
@@ -345,6 +350,7 @@ def handle_product_actions(browser, category, success_count, sheet_name):
             time.sleep(3)  # 等待页面反应
         except Exception as e:
             logging.error(f"点击 Variants 按钮时出现错误：{e}")
+            close_current_tab(browser)
             return success_count
 
         # 点击 Images 按钮
@@ -390,6 +396,8 @@ def handle_product_actions(browser, category, success_count, sheet_name):
 
         except Exception as e:
             logging.error(f"页面加载出错: {e}")
+            close_current_tab(browser)
+
         time.sleep(2)
         browser.close()
         return success_count
@@ -403,14 +411,20 @@ def handle_product_actions(browser, category, success_count, sheet_name):
 
 def close_current_tab(browser):
     try:
-        current_window_handle = browser.current_window_handle
-        browser.switch_to.window(current_window_handle)
-        browser.close()
-        logging.info("关闭标签页。")
+        if len(browser.window_handles) > 1:
+            # 关闭当前标签页
+            browser.close()
+            # 切换到最后一个标签页
+            browser.switch_to.window(browser.window_handles[-1])
+        else:
+            # 如果只有一个标签页，则关闭它
+            browser.close()
+            logging.info("所有标签页已关闭，准备处理下一个产品")
     except NoSuchWindowException as e:
         logging.error(f"浏览器窗口丢失：{e}")
     except Exception as e:
         logging.error(f"关闭标签页时发生错误: {e}")
+
 
 def wait_for_element_to_appear(driver, by, selector, timeout=10):
     try:
