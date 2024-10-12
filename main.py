@@ -1,5 +1,3 @@
-#版本信息：此版本生成exe
-
 import logging
 import time
 import tkinter as tk
@@ -57,24 +55,25 @@ def open_browser():
                 driver.quit()  # 确保在任何情况下都能关闭 WebDriver
 
 
-def open_alibaba(driver, selected_categories, sheet_name):
+def open_alibaba(driver, selected_categories, sheet_names):
     try:
         if driver:
             url = "https://www.alibaba.com/"
             logger.info(f"访问页面: {url}")
             driver.get(url)
-            # 等待 fy23-icbu-search-bar-inner 元素加载完成
             search_bar = WebDriverWait(driver, 10).until(
                 EC.presence_of_element_located((By.CLASS_NAME, 'fy23-icbu-search-bar-inner'))
             )
 
+            total_success_count = 0
             for category in selected_categories:
                 try:
-                    process_link(driver, "https://www.alibaba.com/", category, sheet_name)
+                    success_count = process_link(driver, "https://www.alibaba.com/", category, sheet_names)
+                    total_success_count += success_count
                 except Exception as e:
                     logger.error(f"处理类别 '{category}' 出错: {e}")
-                    # Handle specific errors or retry logic here if needed
 
+            logger.info(f"总共成功导入的产品数量：{total_success_count}")
             driver.quit()
 
     except NoSuchElementException as e:
@@ -260,9 +259,6 @@ def fetch_dropdown_options(driver, sheet_name):
         logger.error("超时：无法加载下拉菜单或搜索结果")
 
 
-
-
-
 def handle_product_actions(browser, category, success_count, sheet_name):
     logger.info(f"处理产品详情页操作: {category}, {sheet_name}!!!")
     try:
@@ -288,6 +284,18 @@ def handle_product_actions(browser, category, success_count, sheet_name):
 
         time.sleep(3)  # 可以根据实际情况调整等待时间
 
+        # 等待 "Sorry, this product can't be shipped to your region." 元素出现
+        try:
+            WebDriverWait(browser, 10).until(
+                EC.presence_of_element_located((By.XPATH, '//div[contains(text(), "Sorry, this product can\'t be shipped to your region.")]'))
+            )
+            logging.info("'检测到产品无法配送到当前区域，跳过'处理。")
+            browser.close()  # 关闭当前产品详情页标签页
+            return success_count  # 返回 success_count，继续处理下一款产品
+        except TimeoutException:
+            logging.info("未检测到区域限制消息，继续处理。")
+            pass  # 如果未找到消息元素，继续后续操作
+
         # 检查是否出现 "This product is already in your store, what would you like to do?"
         success_message = None
         try:
@@ -295,8 +303,8 @@ def handle_product_actions(browser, category, success_count, sheet_name):
                                                    '//div[@class="textcontainer centeralign home-content "]/p[1]')
             if success_message.text == "This product is already in your store, what would you like to do?":
                 logging.info("产品已存在，不再处理当前产品")
-            browser.close()  # 关闭当前产品详情页标签页
-            return success_count  # 跳出函数，不再处理当前产品
+                browser.close()  # 关闭当前产品详情页标签页
+                return success_count  # 跳出函数，不再处理当前产品
         except NoSuchElementException:
             pass  # 如果未找到消息元素，继续后续操作
 
@@ -313,15 +321,6 @@ def handle_product_actions(browser, category, success_count, sheet_name):
             EC.visibility_of_element_located((By.CLASS_NAME, "ms-drop"))
         )
 
-        # # 从 Excel 文件中读取工作表名称作为搜索关键词
-        search_input = dropdown.find_element(By.CSS_SELECTOR, ".ms-search input[type='text']")
-        search_input.clear()
-        search_input.send_keys(sheet_name)
-        logging.info(f"输入关键词: {sheet_name}")
-
-        WebDriverWait(browser, 10)
-
-        # 选择匹配的复选框
         fetch_dropdown_options(browser, sheet_name)
         time.sleep(3)
 
@@ -401,7 +400,7 @@ def handle_product_actions(browser, category, success_count, sheet_name):
             logging.error(f"页面加载出错: {e}")
             close_current_tab(browser)
 
-        time.sleep(2)
+        time.sleep(3)
         browser.close()
         return success_count
 
@@ -411,6 +410,27 @@ def handle_product_actions(browser, category, success_count, sheet_name):
     except Exception as e:
         logging.error(f"处理产品详情页操作时发生错误: {e}")
         return success_count
+
+
+def check_shipping_error(driver):
+    """
+    检查产品详情页中是否有与无法发货相关的错误消息
+    """
+    try:
+        # 使用新的 XPath 查找包含错误消息的元素
+        error_message = driver.find_element(By.XPATH, '//div[@class="unsafe-unableToShip"]')
+
+        # 检查元素是否显示在页面上
+        if error_message.is_displayed():
+            return True
+    except NoSuchElementException:
+        # 如果未找到元素，则返回 False
+        return False
+
+    # 默认情况下返回 False
+    return False
+
+
 
 def close_current_tab(browser):
     try:
@@ -437,6 +457,8 @@ def wait_for_element_to_appear(driver, by, selector, timeout=10):
     except TimeoutException:
         logging.error(f"元素未能在 {timeout} 秒内出现: {selector}")
         raise
+
+
 def close_tab(driver, window_handle):
     try:
         if window_handle:
@@ -445,6 +467,8 @@ def close_tab(driver, window_handle):
             logger.info("关闭出错的产品详情页标签页")
     except Exception as e:
         logger.error(f"关闭标签页时发生错误: {e}")
+
+
 def get_screen_width():
     try:
         root = tk.Tk()
@@ -454,6 +478,7 @@ def get_screen_width():
     except Exception as e:
         logger.error(f"获取屏幕宽度时出错: {e}")
         return 1000  # 返回默认屏幕宽度
+
 
 def browse_excel_file():
     root = tk.Tk()
@@ -466,7 +491,7 @@ def read_categories_from_excel(file_path):
         wb = load_workbook(file_path, read_only=True)
         sheet = wb.active
         categories = []
-        for row in sheet.iter_rows(min_row=3, values_only=True):
+        for row in sheet.iter_rows(min_row=1, values_only=True):
             category = row[0]
             if category:
                 categories.append(category)
@@ -474,6 +499,7 @@ def read_categories_from_excel(file_path):
     except Exception as e:
         logger.error(f"Error reading Excel file: {e}")
         return []
+
 
 def read_sheet_names_from_excel(file_path):
     sheet_name = []
@@ -483,6 +509,7 @@ def read_sheet_names_from_excel(file_path):
     except Exception as e:
         logger.error(f"读取Excel文件时发生错误: {e}")
     return sheet_name
+
 
 def scroll_to_element(browser, element):
     try:
@@ -527,3 +554,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
