@@ -2,7 +2,7 @@
 
 
 a = Analysis(
-    ['main.py'],
+    ['AliProductsImport.py'],
     pathex=[],
     binaries=[],
     datas=[],
