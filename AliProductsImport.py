@@ -14,8 +14,6 @@ from openpyxl import load_workbook
 from contextlib import contextmanager
 import contextlib
 
-
-
 # 设置日志记录器的配置
 logging.basicConfig(level=logging.INFO, format='%(asctime)s || %(message)s')
 logger = logging.getLogger(__name__)
@@ -34,6 +32,7 @@ CONFIG = {
     'MAX_RETRIES': 3
 }
 
+
 # 优化浏览器选项设置
 def get_chrome_options():
     options = Options()
@@ -42,6 +41,7 @@ def get_chrome_options():
     options.add_argument('--ignore-certificate-errors')
     options.add_argument('--log-level=3')
     return options
+
 
 @contextmanager
 def open_browser():
@@ -60,6 +60,7 @@ def open_browser():
             time.sleep(3)
     if driver:
         driver.quit()
+
 
 def open_alibaba(driver, selected_categories, sheet_names):
     try:
@@ -88,30 +89,29 @@ def open_alibaba(driver, selected_categories, sheet_names):
         logger.error(f"超时等待元素加载：{e}")
 
 
-
 def process_link(driver, link, category, sheet_name):
     """处理单个链接的主要逻辑"""
     success_count = 0
     try:
         logger.info(f"处理分类: {category}")
         logger.info(f"处理链接: {link}")
-        
+
         # 导航到链接并等待搜索框加载
         driver.get(link)
         search_input = WebDriverWait(driver, CONFIG['WAIT_TIMEOUT']).until(
             EC.presence_of_element_located((By.CSS_SELECTOR, 'input.search-bar-input.util-ellipsis'))
         )
-        
+
         # 搜索产品
         search_input.clear()
         search_input.send_keys(category)
         driver.find_element(By.CSS_SELECTOR, 'button.fy23-icbu-search-bar-inner-button').click()
-        
+
         # 等待产品列表加载
         WebDriverWait(driver, CONFIG['WAIT_TIMEOUT_LONG']).until(
             EC.presence_of_element_located((By.CLASS_NAME, "organic-list"))
         )
-        
+
         # 滚动加载所有产品
         last_height = driver.execute_script("return document.body.scrollHeight")
         while True:
@@ -121,71 +121,72 @@ def process_link(driver, link, category, sheet_name):
             if new_height == last_height:
                 break
             last_height = new_height
-        
+
         # 处理产品列表
         product_list = driver.find_elements(By.CLASS_NAME, "fy23-search-card")
         logger.info(f"找到 {len(product_list)} 个产品")
-        
+
         for product in product_list:
             try:
                 # 获取产品标题和链接
                 title = product.find_element(By.CLASS_NAME, "search-card-e-title").text
                 link = product.find_element(By.TAG_NAME, "a").get_attribute("href")
                 logger.info(f"处理产品: {title}")
-                
+
                 # 在新标签页中打开产品
                 driver.execute_script(f"window.open('{link}')")
                 success_count = handle_product_detail(driver, category, success_count, sheet_name)
-                
+
             except Exception as e:
                 logger.error(f"处理单个产品时出错: {e}")
                 continue
-                
+
         return success_count
-        
+
     except Exception as e:
         logger.error(f"处理链接时出错: {e}")
         return success_count
+
 
 def handle_product_detail(driver, category, success_count, sheet_name):
     """处理产品详情页面"""
     original_window = driver.current_window_handle
     new_window = None
-    
+
     try:
         # 获取新打开的窗口句柄
-        new_window = [handle for handle in driver.window_handles 
-                     if handle != original_window][0]
-        
+        new_window = [handle for handle in driver.window_handles
+                      if handle != original_window][0]
+
         # 切换到新窗口
         driver.switch_to.window(new_window)
-        
+
         try:
             # 等待页面加载
             WebDriverWait(driver, CONFIG['WAIT_TIMEOUT']).until(
                 EC.presence_of_element_located((By.TAG_NAME, "h1")))
-            
+
             # 检查产品是否可发货
             if check_shipping_error(driver):
                 logger.info("产品无法发货到当前地区，跳过")
                 return success_count
-                
+
             # 检查产品是否已存在
             if check_product_exists(driver):
                 logger.info("产品已存在，跳过")
                 return success_count
-                
+
             # 处理产品导入
             success_count = process_product_import(driver, category, success_count, sheet_name)
-            
+
         finally:
             # 确保关闭新窗口并切回原窗口
             if new_window in driver.window_handles:
                 driver.close()
                 driver.switch_to.window(original_window)
-            
+
         return success_count
-        
+
     except Exception as e:
         logger.error(f"处理产品详情页时发生错误: {e}")
         # 确保在发生错误时也能正确关闭窗口
@@ -194,6 +195,7 @@ def handle_product_detail(driver, category, success_count, sheet_name):
             driver.close()
             driver.switch_to.window(original_window)
         return success_count
+
 
 def check_product_exists(driver):
     try:
@@ -205,20 +207,22 @@ def check_product_exists(driver):
     except NoSuchElementException:
         return False
 
+
 def process_product_import(driver, category, success_count, sheet_name):
     try:
         # 执行导入步骤
         perform_import_steps(driver, sheet_name)
-        
+
         # 等待导入完成
         if wait_for_import_completion(driver):
             success_count += 1
             logger.info(f"产品导入成功，总数: {success_count}")
-        
+
         return success_count
     except Exception as e:
         logger.error(f"产品导入过程中发生错误: {e}")
         return success_count
+
 
 def fetch_dropdown_options(driver, sheet_name):
     """处理下拉菜单选项的选择"""
@@ -301,7 +305,8 @@ def handle_product_actions(browser, category, success_count, sheet_name):
         # 等待 "Sorry, this product can't be shipped to your region." 元素出现
         try:
             WebDriverWait(browser, 10).until(
-                EC.presence_of_element_located((By.XPATH, '//div[contains(text(), "Sorry, this product can\'t be shipped to your region.")]'))
+                EC.presence_of_element_located(
+                    (By.XPATH, '//div[contains(text(), "Sorry, this product can\'t be shipped to your region.")]'))
             )
             logging.info("'检测到产品无法配送到当前区域，跳过'处理。")
             browser.close()  # 关闭当前产品详情页标签页
@@ -445,7 +450,6 @@ def check_shipping_error(driver):
     return False
 
 
-
 def close_current_tab(browser):
     try:
         if len(browser.window_handles) > 1:
@@ -504,6 +508,7 @@ def browse_excel_file():
     file_path = filedialog.askopenfilename(filetypes=[("Excel files", "*.xlsx;*.xls")])
     return file_path
 
+
 def read_categories_from_excel(file_path):
     try:
         wb = load_workbook(file_path, read_only=True)
@@ -534,16 +539,16 @@ def scroll_to_element(driver, element):
     try:
         # 使用显式等待确保元素可见
         WebDriverWait(driver, CONFIG['WAIT_TIMEOUT']).until(EC.visibility_of(element))
-        
+
         # 使用平滑滚动
         driver.execute_script(
-            "arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", 
+            "arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});",
             element
         )
-        
+
         # 等待滚动动画完成
         time.sleep(CONFIG['ANIMATION_WAIT'])
-        
+
         logger.info(f"滚动到元素: {element.text if hasattr(element, 'text') else '未知元素'}")
     except Exception as e:
         logger.error(f"滚动到元素时出错: {e}")
@@ -595,8 +600,8 @@ def perform_import_steps(driver, sheet_name):
 
         # 处理变体 - 使用显式等待替代固定等待
         variants_button = wait.until(
-            EC.element_to_be_clickable((By.CSS_SELECTOR, 
-                'button.accordion-tab[data-actab-group="0"][data-actab-id="2"]')))
+            EC.element_to_be_clickable((By.CSS_SELECTOR,
+                                        'button.accordion-tab[data-actab-group="0"][data-actab-id="2"]')))
         variants_button.click()
         logger.info("点击了变体按钮")
 
@@ -610,7 +615,7 @@ def perform_import_steps(driver, sheet_name):
         # 处理图片
         images_button = wait.until(
             EC.element_to_be_clickable((By.XPATH,
-                '//button[@class="accordion-tab accordion-custom-tab" and @data-actab-group="0" and @data-actab-id="3"]')))
+                                        '//button[@class="accordion-tab accordion-custom-tab" and @data-actab-group="0" and @data-actab-id="3"]')))
         images_button.click()
         logger.info("点击了图片按钮")
 
@@ -623,6 +628,7 @@ def perform_import_steps(driver, sheet_name):
     except Exception as e:
         logger.error(f"执行导入步骤时出错: {e}")
         raise
+
 
 def wait_for_import_completion(driver, timeout=None):
     """优化的导入完成等待函数"""
@@ -653,6 +659,7 @@ def wait_for_import_completion(driver, timeout=None):
     except Exception as e:
         logger.error(f"等待导入完成时出错: {e}")
         return False
+
 
 def main():
     try:
@@ -686,6 +693,6 @@ def main():
         pass
     input("已完成所有内容")
 
+
 if __name__ == "__main__":
     main()
-
